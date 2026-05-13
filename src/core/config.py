@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -29,7 +30,48 @@ class Config:
         self.big_model = os.environ.get("BIG_MODEL", "gpt-4o")
         self.middle_model = os.environ.get("MIDDLE_MODEL", self.big_model)
         self.small_model = os.environ.get("SMALL_MODEL", "gpt-4o-mini")
-        
+
+        # Model aliases - user-defined exact-match mapping loaded from JSON file
+        self.model_aliases = self._load_model_aliases()
+
+    def _load_model_aliases(self) -> dict:
+        """Load model aliases from MODEL_ALIASES_FILE (JSON: {alias: target}).
+
+        Returns an empty dict when the env var is unset, the file is missing,
+        or the content is malformed. Errors are reported to stderr and do not
+        block startup so a bad aliases file cannot take the proxy down.
+        """
+        path = os.environ.get("MODEL_ALIASES_FILE")
+        if not path:
+            return {}
+
+        if not os.path.isfile(path):
+            print(f"Warning: MODEL_ALIASES_FILE not found: {path}", file=sys.stderr)
+            return {}
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Warning: failed to load MODEL_ALIASES_FILE {path}: {e}", file=sys.stderr)
+            return {}
+
+        if not isinstance(data, dict):
+            print(f"Warning: MODEL_ALIASES_FILE {path} must contain a JSON object", file=sys.stderr)
+            return {}
+
+        aliases = {}
+        for k, v in data.items():
+            if isinstance(k, str) and isinstance(v, str) and k and v:
+                aliases[k] = v
+            else:
+                print(f"Warning: MODEL_ALIASES_FILE {path} skipping invalid entry: {k!r} -> {v!r}", file=sys.stderr)
+
+        if aliases:
+            print(f" Model aliases loaded: {len(aliases)} entries from {path}")
+        return aliases
+
+
     def validate_api_key(self):
         """Basic API key validation"""
         if not self.openai_api_key:

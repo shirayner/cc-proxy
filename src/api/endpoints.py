@@ -63,6 +63,10 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
         # Convert Claude request to OpenAI format
         openai_request = convert_claude_to_openai(request, model_manager)
 
+        logger.info(
+            f"[{request_id[:8]}] {request.model} -> {openai_request['model']} (stream={request.stream})"
+        )
+
         # Check if client disconnected before processing
         if await http_request.is_disconnected():
             raise HTTPException(status_code=499, detail="Client disconnected")

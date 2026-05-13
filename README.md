@@ -79,6 +79,8 @@ The application automatically loads environment variables from a `.env` file in 
 - `BIG_MODEL` - Model for Claude opus requests (default: `gpt-4o`)
 - `MIDDLE_MODEL` - Model for Claude opus requests (default: `gpt-4o`)
 - `SMALL_MODEL` - Model for Claude haiku requests (default: `gpt-4o-mini`)
+- `MODEL_ALIASES_FILE` - Optional path to a JSON file of exact-match aliases
+  (e.g. `{"kimi-k2.6_v1": "kimi-k2.6"}`). See [Model Aliases](#model-aliases-exact-match-overrides).
 
 **API Configuration:**
 
@@ -163,6 +165,36 @@ The proxy maps Claude model requests to your configured models:
 | Models with "haiku"            | `SMALL_MODEL` | Default: `gpt-4o-mini` |
 | Models with "sonnet"           | `MIDDLE_MODEL`| Default: `BIG_MODEL`   |
 | Models with "opus"             | `BIG_MODEL`   | Default: `gpt-4o`      |
+
+### Model Aliases (exact-match overrides)
+
+For any case the built-in BIG/MIDDLE/SMALL pattern cannot express (e.g. passing
+`kimi-k2.6_v1` and wanting it routed to `kimi-k2.6`), define an aliases file and
+point `MODEL_ALIASES_FILE` at it:
+
+```bash
+MODEL_ALIASES_FILE=./aliases.json
+```
+
+`aliases.json`:
+
+```json
+{
+  "kimi-k2.6_v1": "kimi-k2.6",
+  "my-fast": "gpt-4o-mini"
+}
+```
+
+Rules:
+
+- Exact, case-sensitive match on the incoming model name.
+- Aliases run **before** all built-in rules — an alias can override prefix
+  passthrough and the haiku/sonnet/opus keyword mapping.
+- No chaining: the target is used verbatim; it is not looked up again.
+- A missing or malformed file is reported to stderr and treated as "no aliases";
+  the proxy still starts.
+
+See `aliases.example.json` for a ready-to-copy sample.
 
 ### Provider Examples
 

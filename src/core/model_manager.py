@@ -6,6 +6,11 @@ class ModelManager:
     
     def map_claude_model_to_openai(self, claude_model: str) -> str:
         """Map Claude model names to OpenAI model names based on BIG/SMALL pattern"""
+        # User-defined aliases take precedence over every built-in rule.
+        # Exact, case-sensitive match; no chaining.
+        if claude_model in self.config.model_aliases:
+            return self.config.model_aliases[claude_model]
+
         # If it's already an OpenAI model, return as-is
         if claude_model.startswith("gpt-") or claude_model.startswith("o1-"):
             return claude_model
