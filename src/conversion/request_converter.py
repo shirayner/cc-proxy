@@ -77,10 +77,7 @@ def convert_claude_to_openai(
     openai_request = {
         "model": openai_model,
         "messages": openai_messages,
-        "max_tokens": min(
-            max(claude_request.max_tokens, config.min_tokens_limit),
-            config.max_tokens_limit,
-        ),
+        "max_tokens": claude_request.max_tokens,
         "temperature": claude_request.temperature,
         "stream": claude_request.stream,
     }
@@ -117,7 +114,9 @@ def convert_claude_to_openai(
         if choice_type == "auto":
             openai_request["tool_choice"] = "auto"
         elif choice_type == "any":
-            openai_request["tool_choice"] = "auto"
+            openai_request["tool_choice"] = "required"
+        elif choice_type == "none":
+            openai_request["tool_choice"] = "none"
         elif choice_type == "tool" and "name" in claude_request.tool_choice:
             openai_request["tool_choice"] = {
                 "type": Constants.TOOL_FUNCTION,
