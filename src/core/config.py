@@ -19,12 +19,15 @@ class Config:
         self.host = os.environ.get("HOST", "0.0.0.0")
         self.port = int(os.environ.get("PORT", "8082"))
         self.log_level = os.environ.get("LOG_LEVEL", "INFO")
-        self.max_tokens_limit = int(os.environ.get("MAX_TOKENS_LIMIT", "4096"))
-        self.min_tokens_limit = int(os.environ.get("MIN_TOKENS_LIMIT", "100"))
-        
         # Connection settings
         self.request_timeout = int(os.environ.get("REQUEST_TIMEOUT", "90"))
         self.max_retries = int(os.environ.get("MAX_RETRIES", "2"))
+
+        # Performance settings
+        self.max_connections = int(os.environ.get("MAX_CONNECTIONS", "200"))
+        self.max_keepalive_connections = int(os.environ.get("MAX_KEEPALIVE_CONNECTIONS", "50"))
+        self.keepalive_expiry = int(os.environ.get("KEEPALIVE_EXPIRY", "30"))
+        self.disconnect_check_interval = int(os.environ.get("DISCONNECT_CHECK_INTERVAL", "5"))
         
         # Model settings - BIG and SMALL models
         self.big_model = os.environ.get("BIG_MODEL", "gpt-4o")

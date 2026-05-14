@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Union, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Dict, Any, Optional, Union, Literal, Annotated
 
 class ClaudeContentBlockText(BaseModel):
     type: Literal["text"]
@@ -15,18 +15,41 @@ class ClaudeContentBlockToolUse(BaseModel):
     name: str
     input: Dict[str, Any]
 
+class ClaudeContentBlockThinking(BaseModel):
+    type: Literal["thinking"]
+    thinking: str
+    signature: Optional[str] = None
+
+class ClaudeContentBlockRedactedThinking(BaseModel):
+    type: Literal["redacted_thinking"]
+    data: Optional[str] = None
+
 class ClaudeContentBlockToolResult(BaseModel):
     type: Literal["tool_result"]
     tool_use_id: str
-    content: Union[str, List[Dict[str, Any]], Dict[str, Any]]
+    content: Union[str, List[Dict[str, Any]], Dict[str, Any], None] = None
 
 class ClaudeSystemContent(BaseModel):
     type: Literal["text"]
     text: str
 
+# Use discriminated union via 'type' field for O(1) dispatch instead of O(n) trial
+ClaudeContentBlock = Annotated[
+    Union[
+        ClaudeContentBlockText,
+        ClaudeContentBlockImage,
+        ClaudeContentBlockToolUse,
+        ClaudeContentBlockToolResult,
+        ClaudeContentBlockThinking,
+        ClaudeContentBlockRedactedThinking,
+    ],
+    Field(discriminator="type"),
+]
+
 class ClaudeMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
     role: Literal["user", "assistant"]
-    content: Union[str, List[Union[ClaudeContentBlockText, ClaudeContentBlockImage, ClaudeContentBlockToolUse, ClaudeContentBlockToolResult]]]
+    content: Union[str, List[ClaudeContentBlock], None] = None
 
 class ClaudeTool(BaseModel):
     name: str
@@ -34,9 +57,13 @@ class ClaudeTool(BaseModel):
     input_schema: Dict[str, Any]
 
 class ClaudeThinkingConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    type: Optional[str] = None  # "enabled" | "adaptive" | "disabled"
     enabled: bool = True
+    budget_tokens: Optional[int] = None
 
 class ClaudeMessagesRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")  # Ignore unknown fields for forward compat
     model: str
     max_tokens: int
     messages: List[ClaudeMessage]
@@ -52,6 +79,7 @@ class ClaudeMessagesRequest(BaseModel):
     thinking: Optional[ClaudeThinkingConfig] = None
 
 class ClaudeTokenCountRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
     model: str
     messages: List[ClaudeMessage]
     system: Optional[Union[str, List[ClaudeSystemContent]]] = None

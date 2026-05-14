@@ -26,6 +26,9 @@ openai_client = OpenAIClient(
     config.request_timeout,
     api_version=config.azure_api_version,
     custom_headers=custom_headers,
+    max_connections=config.max_connections,
+    max_keepalive_connections=config.max_keepalive_connections,
+    keepalive_expiry=config.keepalive_expiry,
 )
 
 async def validate_api_key(x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
@@ -223,7 +226,6 @@ async def root():
         "status": "running",
         "config": {
             "openai_base_url": config.openai_base_url,
-            "max_tokens_limit": config.max_tokens_limit,
             "api_key_configured": bool(config.openai_api_key),
             "client_api_key_validation": bool(config.anthropic_api_key),
             "big_model": config.big_model,

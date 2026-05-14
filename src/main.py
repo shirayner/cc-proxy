@@ -30,9 +30,10 @@ def main():
         print(f"  HOST - Server host (default: 0.0.0.0)")
         print(f"  PORT - Server port (default: 8082)")
         print(f"  LOG_LEVEL - Logging level (default: WARNING)")
-        print(f"  MAX_TOKENS_LIMIT - Token limit (default: 4096)")
-        print(f"  MIN_TOKENS_LIMIT - Minimum token limit (default: 100)")
         print(f"  REQUEST_TIMEOUT - Request timeout in seconds (default: 90)")
+        print(f"  MAX_CONNECTIONS - Max HTTP connections to upstream (default: 200)")
+        print(f"  MAX_KEEPALIVE_CONNECTIONS - Max keepalive connections (default: 50)")
+        print(f"  DISCONNECT_CHECK_INTERVAL - SSE disconnect check interval in chunks (default: 5)")
         print("")
         print("Model mapping:")
         print(f"  Claude haiku models -> {config.small_model}")
@@ -46,27 +47,30 @@ def main():
     print(f"   Big Model (opus): {config.big_model}")
     print(f"   Middle Model (sonnet): {config.middle_model}")
     print(f"   Small Model (haiku): {config.small_model}")
-    print(f"   Max Tokens Limit: {config.max_tokens_limit}")
     print(f"   Request Timeout: {config.request_timeout}s")
+    print(f"   Max Connections: {config.max_connections}")
+    print(f"   Max Keepalive: {config.max_keepalive_connections}")
     print(f"   Server: {config.host}:{config.port}")
     print(f"   Client API Key Validation: {'Enabled' if config.anthropic_api_key else 'Disabled'}")
     print("")
 
     # Parse log level - extract just the first word to handle comments
     log_level = config.log_level.split()[0].lower()
-    
+
     # Validate and set default if invalid
     valid_levels = ['debug', 'info', 'warning', 'error', 'critical']
     if log_level not in valid_levels:
         log_level = 'info'
 
-    # Start server
+    # Start server - single process, optimized for async throughput
     uvicorn.run(
         "src.main:app",
         host=config.host,
         port=config.port,
         log_level=log_level,
         reload=False,
+        backlog=2048,
+        timeout_keep_alive=60,
     )
 
 

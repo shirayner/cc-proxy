@@ -1,6 +1,5 @@
-import json
+import orjson
 from typing import Dict, Any, List
-from venv import logger
 from src.core.constants import Constants
 from src.models.claude import ClaudeMessagesRequest, ClaudeMessage
 from src.core.config import config
@@ -82,7 +81,7 @@ def convert_claude_to_openai(
         "stream": claude_request.stream,
     }
     logger.debug(
-        f"Converted Claude request to OpenAI format: {json.dumps(openai_request, indent=2, ensure_ascii=False)}"
+        f"Converted Claude request to OpenAI format: {orjson.dumps(openai_request, option=orjson.OPT_INDENT_2).decode('utf-8')}"
     )
     # Add optional parameters
     if claude_request.stop_sequences:
@@ -124,6 +123,20 @@ def convert_claude_to_openai(
             }
         else:
             openai_request["tool_choice"] = "auto"
+
+    # Convert thinking config to reasoning_effort
+    if claude_request.thinking:
+        thinking_type = getattr(claude_request.thinking, "type", None)
+        if thinking_type == "enabled" or claude_request.thinking.enabled:
+            openai_request["reasoning_effort"] = "high"
+            # Upstream requires max_tokens > thinking.budget_tokens.
+            # When thinking is enabled, enforce a minimum of 16000 to avoid 400 errors.
+            _THINKING_MIN_TOKENS = 16000
+            if openai_request["max_tokens"] < _THINKING_MIN_TOKENS:
+                logger.info(
+                    f"Raising max_tokens from {openai_request['max_tokens']} to {_THINKING_MIN_TOKENS} for thinking mode"
+                )
+                openai_request["max_tokens"] = _THINKING_MIN_TOKENS
 
     return openai_request
 
@@ -168,10 +181,11 @@ def convert_claude_assistant_message(msg: ClaudeMessage) -> Dict[str, Any]:
     """Convert Claude assistant message to OpenAI format."""
     text_parts = []
     tool_calls = []
+    reasoning_parts = []
 
     if msg.content is None:
         return {"role": Constants.ROLE_ASSISTANT, "content": None}
-    
+
     if isinstance(msg.content, str):
         return {"role": Constants.ROLE_ASSISTANT, "content": msg.content}
 
@@ -185,10 +199,15 @@ def convert_claude_assistant_message(msg: ClaudeMessage) -> Dict[str, Any]:
                     "type": Constants.TOOL_FUNCTION,
                     Constants.TOOL_FUNCTION: {
                         "name": block.name,
-                        "arguments": json.dumps(block.input, ensure_ascii=False),
+                        "arguments": orjson.dumps(block.input).decode("utf-8"),
                     },
                 }
             )
+        elif block.type == Constants.CONTENT_THINKING:
+            reasoning_parts.append(block.thinking)
+        elif block.type == Constants.CONTENT_REDACTED_THINKING:
+            # Redacted thinking cannot be forwarded, skip
+            pass
 
     openai_message = {"role": Constants.ROLE_ASSISTANT}
 
@@ -197,6 +216,10 @@ def convert_claude_assistant_message(msg: ClaudeMessage) -> Dict[str, Any]:
         openai_message["content"] = "".join(text_parts)
     else:
         openai_message["content"] = None
+
+    # Set reasoning_content from thinking blocks
+    if reasoning_parts:
+        openai_message["reasoning_content"] = "\n".join(reasoning_parts)
 
     # Set tool calls
     if tool_calls:
@@ -244,7 +267,7 @@ def parse_tool_result_content(content):
                     result_parts.append(item.get("text", ""))
                 else:
                     try:
-                        result_parts.append(json.dumps(item, ensure_ascii=False))
+                        result_parts.append(orjson.dumps(item).decode("utf-8"))
                     except:
                         result_parts.append(str(item))
         return "\n".join(result_parts).strip()
@@ -253,7 +276,7 @@ def parse_tool_result_content(content):
         if content.get("type") == Constants.CONTENT_TEXT:
             return content.get("text", "")
         try:
-            return json.dumps(content, ensure_ascii=False)
+            return orjson.dumps(content).decode("utf-8")
         except:
             return str(content)
 

@@ -1,28 +1,45 @@
 import asyncio
-import json
+import orjson
 from fastapi import HTTPException
 from typing import Optional, AsyncGenerator, Dict, Any
+import httpx
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
 
 class OpenAIClient:
-    """Async OpenAI client with cancellation support."""
-    
-    def __init__(self, api_key: str, base_url: str, timeout: int = 90, api_version: Optional[str] = None, custom_headers: Optional[Dict[str, str]] = None):
+    """Async OpenAI client with cancellation support and optimized connection pooling."""
+
+    def __init__(self, api_key: str, base_url: str, timeout: int = 90,
+                 api_version: Optional[str] = None,
+                 custom_headers: Optional[Dict[str, str]] = None,
+                 max_connections: int = 200,
+                 max_keepalive_connections: int = 50,
+                 keepalive_expiry: int = 30):
         self.api_key = api_key
         self.base_url = base_url
         self.custom_headers = custom_headers or {}
-        
+
         # Prepare default headers
         default_headers = {
             "Content-Type": "application/json",
             "User-Agent": "claude-proxy/1.0.0"
         }
-        
+
         # Merge custom headers with default headers
         all_headers = {**default_headers, **self.custom_headers}
-        
+
+        # Build an optimized httpx async client with connection pooling
+        http_client = httpx.AsyncClient(
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+                keepalive_expiry=keepalive_expiry,
+            ),
+            timeout=httpx.Timeout(timeout, connect=10.0),
+            http2=True,  # Enable HTTP/2 for multiplexing
+        )
+
         # Detect if using Azure and instantiate the appropriate client
         if api_version:
             self.client = AsyncAzureOpenAI(
@@ -30,14 +47,16 @@ class OpenAIClient:
                 azure_endpoint=base_url,
                 api_version=api_version,
                 timeout=timeout,
-                default_headers=all_headers
+                default_headers=all_headers,
+                http_client=http_client,
             )
         else:
             self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 timeout=timeout,
-                default_headers=all_headers
+                default_headers=all_headers,
+                http_client=http_client,
             )
         self.active_requests: Dict[str, asyncio.Event] = {}
     
@@ -80,8 +99,8 @@ class OpenAIClient:
             else:
                 completion = await completion_task
             
-            # Convert to dict format that matches the original interface
-            return completion.model_dump()
+            # Convert to dict format - exclude_none reduces serialization overhead
+            return completion.model_dump(exclude_none=True)
         
         except AuthenticationError as e:
             raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
@@ -101,34 +120,36 @@ class OpenAIClient:
                 del self.active_requests[request_id]
     
     async def create_chat_completion_stream(self, request: Dict[str, Any], request_id: Optional[str] = None) -> AsyncGenerator[str, None]:
-        """Send streaming chat completion to OpenAI API with cancellation support."""
-        
+        """Send streaming chat completion to OpenAI API with cancellation support.
+
+        Optimized: yields pre-serialized SSE lines to minimize per-chunk overhead.
+        """
+
         # Create cancellation token if request_id provided
         if request_id:
             cancel_event = asyncio.Event()
             self.active_requests[request_id] = cancel_event
-        
+
         try:
             # Ensure stream is enabled
             request["stream"] = True
             if "stream_options" not in request:
                 request["stream_options"] = {}
             request["stream_options"]["include_usage"] = True
-            
+
             # Create the streaming completion
             streaming_completion = await self.client.chat.completions.create(**request)
-            
+
             async for chunk in streaming_completion:
                 # Check for cancellation before yielding each chunk
                 if request_id and request_id in self.active_requests:
                     if self.active_requests[request_id].is_set():
                         raise HTTPException(status_code=499, detail="Request cancelled by client")
-                
-                # Convert chunk to SSE format matching original HTTP client format
-                chunk_dict = chunk.model_dump()
-                chunk_json = json.dumps(chunk_dict, ensure_ascii=False)
-                yield f"data: {chunk_json}"
-            
+
+                # Use model_dump with minimal options for speed
+                chunk_dict = chunk.model_dump(exclude_none=True)
+                yield f"data: {orjson.dumps(chunk_dict).decode('utf-8')}"
+
             # Signal end of stream
             yield "data: [DONE]"
                 
